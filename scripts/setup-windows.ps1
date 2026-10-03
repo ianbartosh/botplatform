@@ -14,7 +14,7 @@ param(
   [int]$DatapiLimit = 0
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"   # native commands report through exit codes, checked below
 function Fail($m) { Write-Host "`nSTOPPED: $m" -ForegroundColor Red; exit 1 }
 function Step($m) { Write-Host "`n== $m" -ForegroundColor Cyan }
 
