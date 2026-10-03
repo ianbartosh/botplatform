@@ -65,7 +65,7 @@ async function runEngine({ dataDir, echo = true } = {}) {
   tracker.start();
 
   // the portal: localhost only — remote access goes through Tailscale (scripts/portal-access.ps1)
-  const port = Number(process.env.BP_PORTAL_PORT || store.getMeta("portal_port") || 8790);
+  const port = Number(process.env.BP_PORTAL_PORT || store.getMeta("portal_port") || 18790);
   const portal = new Portal({ store, keystore, sup, logs, dataDir: P.dataDir });
   try {
     await portal.listen(port, "127.0.0.1");
