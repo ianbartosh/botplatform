@@ -10,6 +10,7 @@ const { Keystore, isSecretKey } = require("./engine/keystore");
 const { STRATEGIES, strategy, validate } = require("./engine/strategies");
 const { paths, runEngine } = require("./engine/engine");
 const { parseEnv } = require("./engine/envfile");
+const auth = require("./engine/auth");
 
 const P = paths();
 const ACTOR = `cli:${os.userInfo().username}`;
@@ -110,6 +111,12 @@ bp — bot platform command line                     data: ${P.dataDir}
   running
     run                                     run the engine in this window (Ctrl+C stops everything)
     limit <host> <rps>                      shared request cap, e.g. limit dlmm.datapi.meteora.ag 5
+
+  portal users
+    user add <name> --role admin|operator   create a login (prints password + 2FA key once)
+    user reset <name>                       new password + 2FA key
+    user list | user remove <name>
+                                            operators see only bots whose owner is their name
 
   results
     positions [id] [--open]                 tracked positions with their entry levers
@@ -234,6 +241,25 @@ async function main() {
       s.setMeta("limits", JSON.stringify(cur)); s.audit(ACTOR, null, "limit.set", { host: pos[0], rps: Number(pos[1]) }); s.close();
       console.log(`${pos[0]}: ${Number(pos[1]) || "unlimited"} req/s across all bots — restart the engine to apply`);
       return;
+    }
+    case "user": {
+      const sub = pos[0];
+      const s = store();
+      const show = (u, verb) => {
+        console.log(`\n${verb} portal user '${u.name}'${u.role ? ` (${u.role})` : ""}\n`);
+        console.log(`  password:   ${u.password}`);
+        console.log(`  2FA key:    ${u.totp}`);
+        console.log(`\nIn Google Authenticator / Authy / 1Password: add account -> "Enter a setup key"`);
+        console.log(`  account name: ${u.name}   key: ${u.totp}   type: time-based`);
+        console.log(`(or paste this link into an app that accepts it: ${u.uri})`);
+        console.log(`\nGive these to ${u.name} privately. They are not shown again — 'bp user reset ${u.name}' makes new ones.`);
+      };
+      if (sub === "add") { need(2, "user add <name> [--role admin|operator]"); show(auth.addUser(s, ACTOR, pos[1].toLowerCase(), flags.role || "operator"), "Created"); }
+      else if (sub === "reset") { need(2, "user reset <name>"); show(auth.resetUser(s, ACTOR, pos[1].toLowerCase()), "New login for"); }
+      else if (sub === "remove") { need(2, "user remove <name>"); auth.removeUser(s, ACTOR, pos[1].toLowerCase()); console.log(`removed '${pos[1]}'`); }
+      else if (sub === "list" || !sub) { for (const u of auth.listUsers(s)) console.log(`${u.name.padEnd(12)} ${u.role.padEnd(9)} since ${fmtTs(u.created_at)}`); }
+      else die("usage: node bp.js user add|reset|remove|list");
+      s.close(); return;
     }
     case "owner": { need(2, "owner <id> <name>"); const s = store(); s.setField(ACTOR, pos[0], "owner", pos[1]); s.close(); console.log("ok"); return; }
     case "remove": { need(1, "remove <id>"); const s = store(); s.removeInstance(ACTOR, pos[0]); s.close(); console.log(`removed '${pos[0]}' (its data folder is kept)`); return; }

@@ -34,6 +34,7 @@ class Supervisor extends EventEmitter {
     this.slots = new Map();   // id -> { worker, startedAt, stamp, wallet, dry, lastPong, stopping }
     this.state = new Map();   // id -> { restarts, nextTry, blocked, lastExit }
     this.timer = null;
+    this.holds = new Set();   // ids a manual command is running on — reconcile leaves them alone
   }
   instanceDir(id) { return path.join(this.dataDir, "instances", id); }
   st(id) { if (!this.state.has(id)) this.state.set(id, { restarts: 0, nextTry: 0, blocked: null, lastExit: null }); return this.state.get(id); }
@@ -54,6 +55,7 @@ class Supervisor extends EventEmitter {
   reconcile(now = Date.now()) {
     const all = this.store.listInstances();
     for (const inst of all) {
+      if (this.holds.has(inst.id)) continue;
       const slot = this.slots.get(inst.id), st = this.st(inst.id);
       if (!inst.enabled) { if (slot && !slot.stopping) this.stop(inst.id, "disabled"); continue; }
       if (slot) {
@@ -76,6 +78,11 @@ class Supervisor extends EventEmitter {
 
   start(inst, all = this.store.listInstances()) {
     if (this.slots.has(inst.id)) return;
+    this.spawn(inst, [], all, false);
+  }
+
+  // Start a worker for an instance. argv non-empty = a one-off command (close positions etc.).
+  spawn(inst, argv, all = this.store.listInstances(), command = false) {
     const s = strategy(inst.strategy);
     const settings = this.store.getSettings(inst.id);
     const secrets = this.keystore.secrets(inst.id);
@@ -95,11 +102,11 @@ class Supervisor extends EventEmitter {
 
     const env = buildEnv(inst, settings, secrets, { dataDir: this.dataDir, instanceDir: id => this.instanceDir(id) });
     const worker = new Worker(HOST, {
-      workerData: { script: s.script, argv: [], limiterSab: this.limiter.sab, limits: this.limits, instanceId: inst.id },
+      workerData: { script: s.script, argv, limiterSab: this.limiter.sab, limits: this.limits, instanceId: inst.id },
       env, stdout: true, stderr: true,
     });
     const stamp = this.store.getInstance(inst.id).updated_at;   // after any wallet write above
-    const slot = { worker, startedAt: Date.now(), stamp, wallet, dry: !!inst.dry_run, lastPong: Date.now(), stopping: false, exited: null };
+    const slot = { worker, startedAt: Date.now(), stamp, wallet, dry: !!inst.dry_run, lastPong: Date.now(), stopping: false, exited: null, command };
     slot.exited = new Promise(res => worker.once("exit", res));
     this.slots.set(inst.id, slot);
     const isDry = () => slot.dry;
@@ -108,9 +115,33 @@ class Supervisor extends EventEmitter {
     worker.on("message", m => { if (m && m.type === "pong") slot.lastPong = Date.now(); });
     worker.on("error", e => this.logs.write(inst.id, `[engine] worker error: ${e && e.stack || e}`, { stream: "err", dry: slot.dry }));
     worker.on("exit", code => this.onExit(inst.id, slot, code));
-    this.logs.write(inst.id, `[engine] started ${inst.strategy} v${s.version} ${slot.dry ? "DRY-RUN" : "LIVE"}${wallet ? " wallet " + wallet : ""}`, { stream: "err", dry: slot.dry });
-    this.store.audit("engine", inst.id, "worker.start", { dry: slot.dry, wallet });
-    this.emit("started", inst.id);
+    this.logs.write(inst.id, `[engine] ${command ? `command ${argv.join(" ")}` : "started"} ${inst.strategy} v${s.version} ${slot.dry ? "DRY-RUN" : "LIVE"}${wallet ? " wallet " + wallet : ""}`, { stream: "err", dry: slot.dry });
+    if (!command) { this.store.audit("engine", inst.id, "worker.start", { dry: slot.dry, wallet }); this.emit("started", inst.id); }
+    return slot;
+  }
+
+  // Run one of the strategy's commands (e.g. closeAll, closePos) with the bot stopped, then let the
+  // normal loop restart it if it is enabled. Never two signers: the running worker stops first.
+  async runCommand(id, name, args = [], { actor = "engine", timeoutMs = 10 * 60_000 } = {}) {
+    const inst = this.store.getInstance(id);
+    if (!inst) throw new Error(`no instance '${id}'`);
+    const fn = strategy(inst.strategy).commands?.[name];
+    if (!fn) throw new Error(`${inst.strategy} has no '${name}' command`);
+    if (this.holds.has(id)) throw new Error("another command is already running on this instance");
+    this.holds.add(id);
+    this.store.audit(actor, id, `command.${name}`, { args });
+    try {
+      await this.stop(id, `running ${name}`);
+      const slot = this.spawn(this.store.getInstance(id), fn(...args), this.store.listInstances(), true);
+      const t = setTimeout(() => slot.worker.terminate().catch(() => {}), timeoutMs);
+      const code = await slot.exited;
+      clearTimeout(t);
+      this.logs.write(id, `[engine] command ${name} finished (exit ${code})`, { stream: "err", dry: slot.dry });
+      return { code };
+    } finally {
+      this.holds.delete(id);
+      this.st(id).nextTry = 0;
+    }
   }
 
   async stop(id, reason = "stop") {
@@ -126,6 +157,7 @@ class Supervisor extends EventEmitter {
 
   onExit(id, slot, code) {
     if (this.slots.get(id) === slot) this.slots.delete(id);
+    if (slot.command) return;
     const st = this.st(id);
     st.lastExit = { at: Date.now(), code };
     if (slot.stopping) { this.emit("stopped", id); return; }
@@ -154,7 +186,7 @@ class Supervisor extends EventEmitter {
   status() {
     return this.store.listInstances().map(inst => {
       const slot = this.slots.get(inst.id), st = this.st(inst.id);
-      const state = slot ? (slot.stopping ? "stopping" : "running")
+      const state = this.holds.has(inst.id) ? "command" : slot ? (slot.stopping ? "stopping" : "running")
         : !inst.enabled ? "stopped" : st.blocked ? "blocked" : st.nextTry > Date.now() ? "restarting" : "starting";
       return { id: inst.id, strategy: inst.strategy, owner: inst.owner, enabled: !!inst.enabled, dry_run: !!inst.dry_run,
                wallet: inst.wallet, state, since: slot ? slot.startedAt : null, restarts: st.restarts,

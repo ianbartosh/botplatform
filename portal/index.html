@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bot Platform</title>
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+  <div id="login" class="login hidden">
+    <form id="loginForm" class="card login-card" autocomplete="on">
+      <h1>Bot Platform</h1>
+      <label>User<input name="name" autocomplete="username" required></label>
+      <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+      <label>6-digit code<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required></label>
+      <button type="submit" class="btn primary">Log in</button>
+      <p id="loginErr" class="err"></p>
+    </form>
+  </div>
+
+  <div id="app" class="hidden">
+    <header class="top">
+      <div class="brand">Bot Platform</div>
+      <nav id="nav">
+        <a href="#/" data-nav="instances">Bots</a>
+        <a href="#/positions" data-nav="positions">Positions</a>
+        <a href="#/levers" data-nav="levers">Levers</a>
+        <a href="#/audit" data-nav="audit">Audit</a>
+      </nav>
+      <div class="me"><span id="who"></span><button id="logout" class="btn ghost small">Log out</button></div>
+    </header>
+    <main id="main"></main>
+  </div>
+  <div id="toast" class="toast hidden"></div>
+</body>
+</html>

@@ -10,6 +10,7 @@ const { STRATEGIES } = require("../engine/strategies");
 STRATEGIES.fake = {
   label: "test bot", script: path.join(__dirname, "fixtures", "fakebot.js"), version: "t",
   needsWallet: true, tracks: null, stateFile: "fake_state.json", required: [], requiredSecrets: [],
+  commands: { closeAll: () => ["--close-all"] },
 };
 
 function tmpEnv() {

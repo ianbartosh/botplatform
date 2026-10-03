@@ -23,6 +23,7 @@ const STRATEGIES = {
     stateFile: "copylp_state.json",
     required: ["TARGET_WALLETS"],
     requiredSecrets: ["HELIUS_API_KEY"],
+    commands: { closeAll: () => ["--close-all"], closePos: pos => [`--close-pos=${pos}`] },
   },
   screenerlp: {
     label: "Screener-LP (Meteora DLMM)",
@@ -33,6 +34,7 @@ const STRATEGIES = {
     stateFile: "copylp_state.json",
     required: ["PICKS_FROM"],            // id of the screener instance whose picks this trades
     requiredSecrets: ["HELIUS_API_KEY"],
+    commands: { closeAll: () => ["--close-all"], closePos: pos => [`--close-pos=${pos}`] },
   },
   screener: {
     label: "Meteora pool screener",
@@ -53,6 +55,7 @@ const STRATEGIES = {
     stateFile: "swapcopy_state.json",
     required: ["SOURCE_WALLET"],
     requiredSecrets: ["RPC_URL"],
+    commands: { closeAll: () => ["--sell-all"] },
   },
 };
 

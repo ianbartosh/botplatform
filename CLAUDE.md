@@ -5,7 +5,8 @@ Windows service via NSSM. Ian wants finished, ready-to-run files and simple step
 not snippets to assemble. Dry-run first, always.
 
 ## Layout
-- `bp.js` — CLI (everything the portal will do).
+- `bp.js` — CLI (same powers as the portal, plus user management).
+- `portal/` — the web UI (index.html, app.js, style.css). All text goes through textContent.
 - `engine/` — `db.js` (SQLite schema), `keystore.js` (AES-GCM secrets, `BP_MASTER_KEY`), `supervisor.js`
   (worker lifecycle, wallet ownership, backoff, heartbeat, settings-change restart), `worker-host.js`
   (loads a bot as the main module inside a worker thread), `limiter.js` (SharedArrayBuffer token bucket
@@ -30,5 +31,6 @@ not snippets to assemble. Dry-run first, always.
 ## Roadmap
 1. ✅ Phase 1a: engine + supervisor + keystore + limiter + tracker + CLI around the unchanged bots.
 2. Phase 1b: merge copylp/screenerlp into one LP core (60 shared functions), replay tests per behaviour.
-3. Phase 4: portal (Tailscale-only, password + TOTP, admin vs operator roles, audit).
+3. ✅ Portal: `engine/portal.js` + `engine/auth.js` + `portal/` (plain JS, CSP, no build). 127.0.0.1 only,
+   reached via `tailscale serve`; password + TOTP; admin vs operator (owner == user name); X-BP header on writes.
 4. Later: EVM workers (hoodlp, hoodscreenerlp); token-narrative ratings by Claude, paper-only until +EV.

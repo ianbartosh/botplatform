@@ -9,6 +9,7 @@ const { LogHub } = require("./logs");
 const { Supervisor } = require("./supervisor");
 const { Tracker } = require("./tracker");
 const { SharedLimiter, DEFAULT_LIMITS } = require("./limiter");
+const { Portal } = require("./portal");
 
 function paths(dataDir = process.env.BP_DATA_DIR || path.join(__dirname, "..", "data")) {
   return { dataDir, db: path.join(dataDir, "botplatform.sqlite"), logs: path.join(dataDir, "logs"),
@@ -62,6 +63,14 @@ async function runEngine({ dataDir, echo = true } = {}) {
   sup.on("error", e => logs.write("_engine", `[engine] ${e.stack || e}`, { stream: "err" }));
   sup.startLoop();
   tracker.start();
+
+  // the portal: localhost only — remote access goes through Tailscale (scripts/portal-access.ps1)
+  const port = Number(process.env.BP_PORTAL_PORT || store.getMeta("portal_port") || 8787);
+  const portal = new Portal({ store, keystore, sup, logs, dataDir: P.dataDir });
+  try {
+    await portal.listen(port, "127.0.0.1");
+    logs.write("_engine", `[engine] portal on http://127.0.0.1:${port}`, { stream: "err" });
+  } catch (e) { logs.write("_engine", `[engine] portal could not start on port ${port}: ${e.message}`, { stream: "err" }); }
   const st = setInterval(writeStatus, 5000);
   writeStatus();
 
@@ -72,6 +81,7 @@ async function runEngine({ dataDir, echo = true } = {}) {
     logs.write("_engine", `[engine] ${sig} — stopping all workers`, { stream: "err" });
     clearInterval(st);
     tracker.stop();
+    await portal.close();
     await sup.shutdown();
     writeStatus();
     store.close();
@@ -81,7 +91,7 @@ async function runEngine({ dataDir, echo = true } = {}) {
   process.on("SIGINT", () => close("SIGINT"));
   process.on("SIGTERM", () => close("SIGTERM"));
   process.on("SIGBREAK", () => close("SIGBREAK"));   // Windows service stop (NSSM sends Ctrl+Break)
-  return { store, sup, tracker, close };
+  return { store, sup, tracker, portal, close };
 }
 
 module.exports = { runEngine, paths, limitsFrom };
