@@ -1,5 +1,5 @@
 # portal-access.ps1 — make the portal reachable from your phone/laptop through Tailscale (private),
-# never from the open internet. The portal itself only listens on 127.0.0.1:8787.
+# never from the open internet. The portal itself only listens on 127.0.0.1:8790.
 #
 #   powershell -ExecutionPolicy Bypass -File C:\botplatform\scripts\portal-access.ps1
 #
@@ -7,7 +7,7 @@
 # https://tailscale.com/download and log in to the same Tailscale network (invite them from the
 # Tailscale admin page: https://login.tailscale.com/admin/users).
 
-param([int]$Port = 8787)
+param([int]$Port = 8790)
 $ErrorActionPreference = "Continue"
 function Fail($m) { Write-Host "`nSTOPPED: $m" -ForegroundColor Red; exit 1 }
 

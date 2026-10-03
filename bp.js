@@ -294,6 +294,13 @@ async function main() {
       else die("usage: node bp.js user add|passwd|remove|list");
       return;
     }
+    case "portal-port": {
+      need(1, "portal-port <number>");
+      const n = Number(pos[0]); if (!(n > 1024 && n < 65536)) die("pick a port between 1025 and 65535");
+      const s = store(); s.setMeta("portal_port", n); s.audit(ACTOR, null, "portal.port", { port: n }); s.close();
+      console.log(`portal port set to ${n} — restart the engine to apply`);
+      return;
+    }
     case "owner": { need(2, "owner <id> <name>"); const s = store(); s.setField(ACTOR, pos[0], "owner", pos[1]); s.close(); console.log("ok"); return; }
     case "remove": { need(1, "remove <id>"); const s = store(); s.removeInstance(ACTOR, pos[0]); s.close(); console.log(`removed '${pos[0]}' (its data folder is kept)`); return; }
     case "run": { await runEngine({}); return; }

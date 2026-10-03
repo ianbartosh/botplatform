@@ -65,12 +65,15 @@ async function runEngine({ dataDir, echo = true } = {}) {
   tracker.start();
 
   // the portal: localhost only — remote access goes through Tailscale (scripts/portal-access.ps1)
-  const port = Number(process.env.BP_PORTAL_PORT || store.getMeta("portal_port") || 8787);
+  const port = Number(process.env.BP_PORTAL_PORT || store.getMeta("portal_port") || 8790);
   const portal = new Portal({ store, keystore, sup, logs, dataDir: P.dataDir });
   try {
     await portal.listen(port, "127.0.0.1");
     logs.write("_engine", `[engine] portal on http://127.0.0.1:${port}`, { stream: "err" });
-  } catch (e) { logs.write("_engine", `[engine] portal could not start on port ${port}: ${e.message}`, { stream: "err" }); }
+  } catch (e) {
+    logs.write("_engine", `[engine] PORTAL NOT STARTED: port ${port} is in use by another program (${e.code || e.message}). ` +
+      `Pick another port: set BP_PORTAL_PORT, or run: bp portal-port <number>`, { stream: "err" });
+  }
   const st = setInterval(writeStatus, 5000);
   writeStatus();
 

@@ -60,7 +60,7 @@ bp logs slp                     # raw log
 
 ## Portal
 
-The portal runs inside the engine at `http://127.0.0.1:8787` (localhost only). From the server itself
+The portal runs inside the engine at `http://127.0.0.1:8790` (localhost only). From the server itself
 you can open that address in a browser. To open it from your phone or laptop:
 
 1. Create logins — it asks you to type a password (or press Enter to generate one):
