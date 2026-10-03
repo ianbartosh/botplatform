@@ -13,7 +13,7 @@
       <h1>Bot Platform</h1>
       <label>User<input name="name" autocomplete="username" required></label>
       <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
-      <label>6-digit code<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required></label>
+      <label id="codeRow" class="hidden">6-digit code<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"></label>
       <button type="submit" class="btn primary">Log in</button>
       <p id="loginErr" class="err"></p>
     </form>

@@ -27,6 +27,31 @@ const die = m => { console.error(`error: ${m}`); process.exit(1); };
 const store = () => new Store(P.db);
 const keystore = s => new Keystore(s, process.env.BP_MASTER_KEY);
 const need = (n, usage) => { if (pos.length < n) die(`usage: node bp.js ${usage}`); };
+// Ask for a new password twice without showing it (works with piped input too).
+// Returns "" when the first answer is empty (= generate one).
+function askNewPassword(name) {
+  const readline = require("readline");
+  const q1 = `Password for ${name} (10+ characters; press Enter to generate one): `, q2 = "Repeat: ";
+  return new Promise((resolve, reject) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: !!process.stdin.isTTY });
+    let current = q1;
+    if (process.stdin.isTTY) rl._writeToOutput = str => { if (str.includes(current)) rl.output.write(current); else if (/\r|\n/.test(str)) rl.output.write("\n"); };
+    const answers = [];
+    const ask = q => { current = q; rl.setPrompt(q); rl.prompt(); };
+    rl.on("line", line => {
+      answers.push(line.trim());
+      if (answers.length === 1 && answers[0]) return ask(q2);
+      rl.close();
+    });
+    rl.on("close", () => {
+      if (!process.stdin.isTTY) process.stdout.write("\n");
+      if (!answers[0]) return resolve("");
+      if (answers[1] !== answers[0]) return reject(new Error("the two passwords differ"));
+      resolve(answers[0]);
+    });
+    ask(q1);
+  });
+}
 const fmtTs = t => (t ? new Date(t).toISOString().replace("T", " ").slice(0, 16) : "-");
 const mask = v => (v.length <= 8 ? "****" : `${v.slice(0, 4)}…${v.slice(-4)}`);
 
@@ -113,9 +138,10 @@ bp — bot platform command line                     data: ${P.dataDir}
     limit <host> <rps>                      shared request cap, e.g. limit dlmm.datapi.meteora.ag 5
 
   portal users
-    user add <name> --role admin|operator   create a login (prints password + 2FA key once)
-    user reset <name>                       new password + 2FA key
+    user add <name> --role admin|operator   create a login (asks for a password; Enter = generate one)
+    user passwd <name>                      change a password
     user list | user remove <name>
+                                            add --2fa to add/passwd to also require an authenticator code
                                             operators see only bots whose owner is their name
 
   results
@@ -244,22 +270,29 @@ async function main() {
     }
     case "user": {
       const sub = pos[0];
-      const s = store();
-      const show = (u, verb) => {
-        console.log(`\n${verb} portal user '${u.name}'${u.role ? ` (${u.role})` : ""}\n`);
-        console.log(`  password:   ${u.password}`);
-        console.log(`  2FA key:    ${u.totp}`);
-        console.log(`\nIn Google Authenticator / Authy / 1Password: add account -> "Enter a setup key"`);
-        console.log(`  account name: ${u.name}   key: ${u.totp}   type: time-based`);
-        console.log(`(or paste this link into an app that accepts it: ${u.uri})`);
-        console.log(`\nGive these to ${u.name} privately. They are not shown again — 'bp user reset ${u.name}' makes new ones.`);
+      const twofa = !!flags["2fa"];
+      const show = u => {
+        if (u.password) console.log(`  password:  ${u.password}   (generated — shown only now)`);
+        if (u.totp) {
+          console.log(`  2FA key:   ${u.totp}`);
+          console.log(`  In an authenticator app: add account -> "Enter a setup key", time-based.`);
+        }
       };
-      if (sub === "add") { need(2, "user add <name> [--role admin|operator]"); show(auth.addUser(s, ACTOR, pos[1].toLowerCase(), flags.role || "operator"), "Created"); }
-      else if (sub === "reset") { need(2, "user reset <name>"); show(auth.resetUser(s, ACTOR, pos[1].toLowerCase()), "New login for"); }
-      else if (sub === "remove") { need(2, "user remove <name>"); auth.removeUser(s, ACTOR, pos[1].toLowerCase()); console.log(`removed '${pos[1]}'`); }
-      else if (sub === "list" || !sub) { for (const u of auth.listUsers(s)) console.log(`${u.name.padEnd(12)} ${u.role.padEnd(9)} since ${fmtTs(u.created_at)}`); }
-      else die("usage: node bp.js user add|reset|remove|list");
-      s.close(); return;
+      if (sub === "add" || sub === "passwd" || sub === "reset") {
+        need(2, `user ${sub} <name>${sub === "add" ? " [--role admin|operator]" : ""} [--2fa]`);
+        const name = pos[1].toLowerCase();
+        const pw = await askNewPassword(name);
+        const s = store();
+        const u = sub === "add" ? auth.addUser(s, ACTOR, name, flags.role || "operator", { password: pw || null, twofa })
+                                : auth.setPassword(s, ACTOR, name, { password: pw || null, twofa });
+        s.close();
+        console.log(`${sub === "add" ? "Created" : "Updated"} portal user '${name}'${u.role ? ` (${u.role})` : ""}${u.totp ? " with 2FA" : ""}.`);
+        show(u);
+        console.log("If the engine is running, this takes effect at the next login.");
+      } else if (sub === "remove") { need(2, "user remove <name>"); const s = store(); auth.removeUser(s, ACTOR, pos[1].toLowerCase()); s.close(); console.log(`removed '${pos[1]}'`); }
+      else if (sub === "list" || !sub) { const s = store(); for (const u of auth.listUsers(s)) console.log(`${u.name.padEnd(12)} ${u.role.padEnd(9)} since ${fmtTs(u.created_at)}`); s.close(); }
+      else die("usage: node bp.js user add|passwd|remove|list");
+      return;
     }
     case "owner": { need(2, "owner <id> <name>"); const s = store(); s.setField(ACTOR, pos[0], "owner", pos[1]); s.close(); console.log("ok"); return; }
     case "remove": { need(1, "remove <id>"); const s = store(); s.removeInstance(ACTOR, pos[0]); s.close(); console.log(`removed '${pos[0]}' (its data folder is kept)`); return; }

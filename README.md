@@ -63,13 +63,14 @@ bp logs slp                     # raw log
 The portal runs inside the engine at `http://127.0.0.1:8787` (localhost only). From the server itself
 you can open that address in a browser. To open it from your phone or laptop:
 
-1. Create logins (each prints a password and a 2FA key once):
+1. Create logins — it asks you to type a password (or press Enter to generate one):
    ```
    bp user add ian --role admin
    bp user add josh
    bp user add matt
    ```
-   Add the 2FA key to Google Authenticator / Authy ("Enter a setup key", time-based).
+   Change one later with `bp user passwd <name>`. Optional: add `--2fa` to also require an
+   authenticator code for that user.
 2. Give Josh's and Matt's bots their owner, so they see only their own: `bp owner <bot> josh`.
 3. Publish it on your private Tailscale network:
    ```

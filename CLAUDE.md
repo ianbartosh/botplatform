@@ -32,5 +32,5 @@ not snippets to assemble. Dry-run first, always.
 1. ✅ Phase 1a: engine + supervisor + keystore + limiter + tracker + CLI around the unchanged bots.
 2. Phase 1b: merge copylp/screenerlp into one LP core (60 shared functions), replay tests per behaviour.
 3. ✅ Portal: `engine/portal.js` + `engine/auth.js` + `portal/` (plain JS, CSP, no build). 127.0.0.1 only,
-   reached via `tailscale serve`; password + TOTP; admin vs operator (owner == user name); X-BP header on writes.
+   reached via `tailscale serve`; password login (Ian chose no 2FA by default; `--2fa` per user is optional); admin vs operator (owner == user name); X-BP header on writes.
 4. Later: EVM workers (hoodlp, hoodscreenerlp); token-narrative ratings by Claude, paper-only until +EV.

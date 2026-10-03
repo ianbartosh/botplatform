@@ -63,22 +63,33 @@ function otpauthUri(user, secret, issuer = "botplatform") {
 }
 
 // ---------- users ----------
-function addUser(store, actor, name, role) {
+// 2FA is optional per user (off by default). A user without a TOTP secret logs in with a password only.
+const MIN_PW = 10;
+function checkNewPassword(pw) {
+  if (String(pw || "").length < MIN_PW) throw new Error(`password must be at least ${MIN_PW} characters`);
+}
+function addUser(store, actor, name, role, { password = null, twofa = false } = {}) {
   if (!/^[a-z][a-z0-9_-]{1,30}$/.test(name)) throw new Error("user name: 2-31 chars, a-z 0-9 _ -, starting with a letter");
   if (!["admin", "operator"].includes(role)) throw new Error("role must be admin or operator");
   if (store.q("SELECT 1 FROM users WHERE name = ?").get(name)) throw new Error(`user '${name}' already exists`);
-  const password = randomPassword(), totp = newTotpSecret();
-  store.q("INSERT INTO users (name, role, pw_hash, totp_secret, created_at) VALUES (?, ?, ?, ?, ?)").run(name, role, hashPassword(password), totp, Date.now());
-  store.audit(actor, null, "user.add", { name, role });
-  return { name, role, password, totp, uri: otpauthUri(name, totp) };
+  const pw = password || randomPassword();
+  checkNewPassword(pw);
+  const totp = twofa ? newTotpSecret() : null;
+  store.q("INSERT INTO users (name, role, pw_hash, totp_secret, created_at) VALUES (?, ?, ?, ?, ?)").run(name, role, hashPassword(pw), totp, Date.now());
+  store.audit(actor, null, "user.add", { name, role, twofa: !!totp });
+  return { name, role, password: password ? null : pw, totp, uri: totp ? otpauthUri(name, totp) : null };
 }
-function resetUser(store, actor, name) {
+// New password (and optionally turn 2FA on or off). Existing sessions of that user are not kept.
+function setPassword(store, actor, name, { password = null, twofa = false } = {}) {
   if (!getUser(store, name)) throw new Error(`no user '${name}'`);
-  const password = randomPassword(), totp = newTotpSecret();
-  store.q("UPDATE users SET pw_hash = ?, totp_secret = ? WHERE name = ?").run(hashPassword(password), totp, name);
-  store.audit(actor, null, "user.reset", { name });
-  return { name, password, totp, uri: otpauthUri(name, totp) };
+  const pw = password || randomPassword();
+  checkNewPassword(pw);
+  const totp = twofa ? newTotpSecret() : null;
+  store.q("UPDATE users SET pw_hash = ?, totp_secret = ? WHERE name = ?").run(hashPassword(pw), totp, name);
+  store.audit(actor, null, "user.password", { name, twofa: !!totp });
+  return { name, password: password ? null : pw, totp, uri: totp ? otpauthUri(name, totp) : null };
 }
+const resetUser = (store, actor, name, opts) => setPassword(store, actor, name, opts);
 function removeUser(store, actor, name) {
   store.q("DELETE FROM users WHERE name = ?").run(name);
   store.audit(actor, null, "user.remove", { name });
@@ -107,13 +118,18 @@ class Auth {
     if (keys.some(k => this.locked(k, now))) throw new Error("too many attempts — wait 15 minutes");
     const u = getUser(this.store, String(name || ""));
     const pwOk = u ? checkPassword(password, u.pw_hash) : (checkPassword(password, hashPassword("x")), false);  // same cost either way
-    const st = u && pwOk ? verifyTotp(u.totp_secret, code, now) : -1;
-    if (!u || !pwOk || st < 0 || st <= (this.lastStep.get(u.name) ?? -1)) {
+    if (u && pwOk && u.totp_secret && !String(code || "").trim()) {
+      const e = new Error("enter the 6-digit code from your authenticator app");
+      e.needCode = true;
+      throw e;                                   // correct password: not counted as a failure
+    }
+    const st = !u || !pwOk ? -1 : u.totp_secret ? verifyTotp(u.totp_secret, code, now) : 0;
+    if (!u || !pwOk || st < 0 || (u.totp_secret && st <= (this.lastStep.get(u.name) ?? -1))) {
       keys.forEach(k => this.fail(k, now));
       this.store.audit(`portal:${name || "?"}`, null, "login.fail", { ip });
       throw new Error("wrong user, password or code");
     }
-    this.lastStep.set(u.name, st);
+    if (u.totp_secret) this.lastStep.set(u.name, st);
     keys.forEach(k => this.fails.delete(k));
     const token = crypto.randomBytes(32).toString("base64url");
     this.sessions.set(token, { user: u.name, exp: now + this.sessionMs });
@@ -129,7 +145,8 @@ class Auth {
     return { name: u.name, role: u.role };
   }
   logout(token) { this.sessions.delete(token); }
+  logoutUser(name) { for (const [t, s] of this.sessions) if (s.user === name) this.sessions.delete(t); }
 }
 
 module.exports = { Auth, hashPassword, checkPassword, hotp, verifyTotp, newTotpSecret, base32Encode, base32Decode,
-                   otpauthUri, addUser, resetUser, removeUser, getUser, listUsers, randomPassword };
+                   otpauthUri, addUser, setPassword, resetUser, removeUser, getUser, listUsers, randomPassword };

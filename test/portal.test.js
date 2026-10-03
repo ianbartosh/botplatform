@@ -32,8 +32,9 @@ function setup(t) {
   const E = tmpEnv();
   const sup = new Supervisor({ store: E.store, keystore: E.keystore, logs: E.logs, dataDir: E.dir, reconcileMs: 50, pingMs: 100, backoffBaseMs: 100 });
   const portal = new Portal({ store: E.store, keystore: E.keystore, sup, logs: E.logs, dataDir: E.dir });
-  const ian = A.addUser(E.store, "t", "ian", "admin");
-  const josh = A.addUser(E.store, "t", "josh", "operator");
+  const ian = { ...A.addUser(E.store, "t", "ian", "admin", { password: "ian-password-1" }), password: "ian-password-1" };
+  const josh = { ...A.addUser(E.store, "t", "josh", "operator", { password: "josh-password-1" }), password: "josh-password-1" };
+  const matt = A.addUser(E.store, "t", "matt", "operator", { twofa: true });   // generated password + 2FA
   E.store.addInstance("t", { id: "ian-bot", strategy: "fake", owner: "ian" });
   E.store.addInstance("t", { id: "josh-bot", strategy: "fake", owner: "josh" });
   E.keystore.setSecret("t", "ian-bot", "HELIUS_API_KEY", "super-secret-helius-value");
@@ -44,7 +45,7 @@ function setup(t) {
   const login = async (u, opts = {}) => {
     await ready;
     // each login needs a fresh TOTP step (replays are refused), so step through future codes
-    const code = opts.code ?? A.hotp(u.totp, Math.floor(Date.now() / 30000) + (stepOffset++ % 2));
+    const code = opts.code ?? (u.totp ? A.hotp(u.totp, Math.floor(Date.now() / 30000) + (stepOffset++ % 2)) : undefined);
     const r = await fetch(`${base}/api/login`, { method: "POST", headers: { "Content-Type": "application/json", "X-BP": "1" },
       body: JSON.stringify({ name: u.name, password: opts.password ?? u.password, code }) });
     const cookie = (r.headers.get("set-cookie") || "").split(";")[0];
@@ -56,15 +57,13 @@ function setup(t) {
       : { method: "POST", headers: { cookie, "Content-Type": "application/json", ...(xbp ? { "X-BP": "1" } : {}) }, body: JSON.stringify(body) });
     return { status: r.status, body: await r.json().catch(() => null), text: null };
   };
-  return { ...E, sup, portal, ian, josh, login, call, ready: () => ready.then(() => base) };
+  return { ...E, sup, portal, ian, josh, matt, login, call, ready: () => ready.then(() => base) };
 }
 
-test("portal: login with password + 2FA; wrong code, no session, missing X-BP are refused", async t => {
+test("portal: password login; wrong password, no session, missing X-BP are refused", async t => {
   const S = setup(t);
   assert.equal((await S.call("", "/instances")).status, 401);
-  const bad = await S.login(S.ian, { code: "000000" });
-  assert.equal(bad.status, 401);
-  const badPw = await S.login(S.ian, { password: "nope" });
+  const badPw = await S.login(S.ian, { password: "nope-nope-nope" });
   assert.equal(badPw.status, 401);
   const ok = await S.login(S.ian);
   assert.equal(ok.status, 200, JSON.stringify(ok.body));
@@ -74,11 +73,24 @@ test("portal: login with password + 2FA; wrong code, no session, missing X-BP ar
   assert.equal((await S.call(ok.cookie, "/me")).body.user.name, "ian");
 });
 
-test("portal: a TOTP code cannot be reused", async t => {
+test("portal: optional 2FA — asks for the code, rejects a wrong one, refuses a reused one", async t => {
   const S = setup(t);
-  const code = A.hotp(S.ian.totp, Math.floor(Date.now() / 30000));
-  assert.equal((await S.login(S.ian, { code })).status, 200);
-  assert.equal((await S.login(S.ian, { code })).status, 401);
+  const noCode = await S.login(S.matt, { code: "" });
+  assert.equal(noCode.status, 401);
+  assert.equal(noCode.body.need_code, true);
+  assert.equal((await S.login(S.matt, { code: "000000" })).status, 401);
+  const code = A.hotp(S.matt.totp, Math.floor(Date.now() / 30000));
+  assert.equal((await S.login(S.matt, { code })).status, 200);
+  assert.equal((await S.login(S.matt, { code })).status, 401, "replayed code");
+});
+
+test("users: own password, minimum length, password change", async t => {
+  const S = setup(t);
+  await S.ready();
+  assert.throws(() => A.addUser(S.store, "t", "short", "operator", { password: "abc" }), /at least 10/);
+  A.setPassword(S.store, "t", "josh", { password: "a-new-password" });
+  assert.ok(A.checkPassword("a-new-password", A.getUser(S.store, "josh").pw_hash));
+  assert.equal(A.getUser(S.store, "josh").totp_secret, null);
 });
 
 test("portal: five failures lock the account", async t => {

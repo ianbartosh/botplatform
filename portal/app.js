@@ -33,6 +33,7 @@ async function api(path, body) {
   const opt = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json", "X-BP": "1" }, body: JSON.stringify(body) };
   const r = await fetch(`/api${path}`, { credentials: "same-origin", ...opt });
   const j = await r.json().catch(() => ({}));
+  if (r.status === 401 && path === "/login") { const e = new Error(j.error || "login failed"); e.needCode = !!j.need_code; throw e; }
   if (r.status === 401) { showLogin(); throw new Error("please log in"); }
   if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
   return j;
@@ -48,8 +49,11 @@ $("#loginForm").addEventListener("submit", async e => {
   $("#loginErr").textContent = "";
   try {
     const r = await api("/login", { name: f.get("name"), password: f.get("password"), code: f.get("code") });
-    e.target.reset(); start(r.user);
-  } catch (err) { $("#loginErr").textContent = err.message; }
+    e.target.reset(); $("#codeRow").classList.add("hidden"); start(r.user);
+  } catch (err) {
+    if (err.needCode) { $("#codeRow").classList.remove("hidden"); $("#codeRow input").focus(); }
+    $("#loginErr").textContent = err.message;
+  }
 });
 $("#logout").addEventListener("click", async () => { await api("/logout", {}).catch(() => {}); showLogin(); });
 function start(user) {

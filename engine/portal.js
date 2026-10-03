@@ -135,7 +135,10 @@ class Portal {
     this.on("POST", "/api/login", ({ body, res, ip }) => {
       let r;
       try { r = this.auth.login({ name: String(body.name || "").trim().toLowerCase(), password: body.password, code: body.code, ip }); }
-      catch (e) { throw new HttpError(401, e.message); }
+      catch (e) {
+        if (e.needCode) { res.writeHead(401, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: e.message, need_code: true })); return; }
+        throw new HttpError(401, e.message);
+      }
       const { token, user } = r;
       res.setHeader("Set-Cookie", `${COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${12 * 3600}`);
       return { user };
@@ -277,9 +280,9 @@ class Portal {
   }
   close() {
     return new Promise(r => {
-      if (!this.server || !this.server.listening) return r();
-      this.server.close(() => r());
-      this.server.closeAllConnections();
+      if (!this.server) return r();
+      const shut = () => { this.server.close(() => r()); this.server.closeAllConnections(); };
+      if (this.server.listening) shut(); else this.server.once("listening", shut);
     });
   }
 }
