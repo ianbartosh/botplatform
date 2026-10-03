@@ -1,0 +1,22 @@
+{
+  "name": "botplatform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "One engine for Ian's Solana bots: copy-LP, screener-LP, screener and swapcopy as supervised workers, with tracking and a portal.",
+  "main": "bp.js",
+  "bin": { "bp": "bp.js" },
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "test": "node --test --test-concurrency=1 \"test/*.test.js\"",
+    "start": "node bp.js run"
+  },
+  "dependencies": {
+    "@meteora-ag/dlmm": "^1.9.14",
+    "@solana/spl-token": "^0.4.13",
+    "@solana/web3.js": "^1.98.4",
+    "bn.js": "^5.2.5",
+    "bs58": "^6.0.0",
+    "dotenv": "^17.4.2",
+    "ws": "^8.21.1"
+  }
+}
