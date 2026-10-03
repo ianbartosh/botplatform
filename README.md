@@ -43,43 +43,20 @@ core behind the same interface.
 
 ## Dry-run on the current VPS
 
-Rules: no wallet keys (`--no-keys`), the free Helius key, no Slack posts from the test screener.
-
 ```
-bp import scr screener C:\bots\screener\screener_settings.json
-bp unset scr SLACK_WEBHOOK_URL
-
-bp import slp screenerlp C:\bots\screenerlp\.env --no-keys
-bp set slp PICKS_FROM=scr
-bp secret slp HELIUS_API_KEY <free-helius-key>
-
-bp import slp2 screenerlp C:\bots\screenerlp2\.env --no-keys
-bp set slp2 PICKS_FROM=scr SCREENER_BASE_SHAPE=spot
-bp secret slp2 HELIUS_API_KEY <free-helius-key>
-
-bp import swap swapcopy C:\bots\swapcopy\.env --no-keys
-
-bp show slp            # check settings and "ready to start"
-bp enable scr
-bp enable slp
-bp enable slp2
-bp enable swap
-bp run                 # or, if installed with -Service, it is already running
+powershell -ExecutionPolicy Bypass -File C:\botplatform\scripts\dryrun-setup.ps1
 ```
 
-If an imported `.env` has `RPC_URL` pointing at the old `rpcproxy` (127.0.0.1:8899), replace it:
-`bp secret slp RPC_URL https://mainnet.helius-rpc.com/?api-key=<free-key>` or `bp unset slp RPC_URL`.
+It asks for your free Helius key, imports screener, screenerlp, screenerlp2 and swapcopy from `C:\bots`
+**without wallet keys**, turns off the test screener's Slack posts, and starts everything in dry-run.
 
-Then, after a few hours:
+Check on it:
 
 ```
-bp status                       # what is running, limiter usage
+bp status                       # what is running
 bp decisions slp --hours 6      # what the dry-run would have done
 bp logs slp                     # raw log
 ```
-
-Compare `bp decisions` with the old bot's pm2 log over the same hours
-(`findstr /i "MIRROR CLOSE TRIM" C:\ProgramData\pm2\home\logs\screenerlp-out.log`).
 
 ## Going live (new VPS only)
 
